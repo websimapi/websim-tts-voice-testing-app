@@ -1,13 +1,14 @@
 <html><head><base href="." />
 <meta charset="UTF-8">
-<title>TTS Voice Testing App</title>
+<title>TTS Voice Testing App with Transformers.js</title>
+<script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0"></script>
 <style>
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     max-width: 800px;
     margin: 0 auto;
     padding: 20px;
-    background: #f5f5f5;
+    background: #f5f5f5;  
   }
 
   .container {
@@ -66,6 +67,11 @@
     background: #0056b3;
   }
 
+  button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+
   .voice-info {
     font-size: 0.9em;
     color: #666;
@@ -90,37 +96,90 @@
   .voice-settings input[type="range"] {
     width: 200px;
   }
+
+  .status {
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 4px;
+    background: #f8f9fa;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .tab {
+    padding: 10px 20px;
+    background: #eee;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .tab.active {
+    background: #007bff;
+    color: white;
+  }
+
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  #loading {
+    display: none;
+    color: #666;
+    font-style: italic;
+  }
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>TTS Voice Tester</h1>
+  <h1>Advanced TTS Voice Tester</h1>
   
-  <div class="controls">
-    <button id="refreshVoices">Refresh Voice List</button>
-    <button id="stopButton">Stop Speaking</button>
+  <div class="tabs">
+    <div class="tab active" data-tab="browser-tts">Browser TTS</div>
+    <div class="tab" data-tab="transformer-tts">Transformer TTS</div>
   </div>
 
-  <div class="voice-list" id="voiceList">
-    <!-- Voices will be listed here -->
+  <div id="browser-tts" class="tab-content active">
+    <div class="controls">
+      <button id="refreshVoices">Refresh Voice List</button>
+      <button id="stopButton">Stop Speaking</button>
+    </div>
+
+    <div class="voice-list" id="voiceList">
+      <!-- Voices will be listed here -->
+    </div>
+
+    <div class="voice-settings">
+      <label>
+        Rate:
+        <input type="range" id="rate" min="0.1" max="2" value="1" step="0.1">
+        <span id="rateValue">1</span>
+      </label>
+      <label>
+        Pitch:
+        <input type="range" id="pitch" min="0" max="2" value="1" step="0.1">
+        <span id="pitchValue">1</span>
+      </label>
+      <label>
+        Volume:
+        <input type="range" id="volume" min="0" max="1" value="1" step="0.1">
+        <span id="volumeValue">1</span>
+      </label>
+    </div>
   </div>
 
-  <div class="voice-settings">
-    <label>
-      Rate:
-      <input type="range" id="rate" min="0.1" max="2" value="1" step="0.1">
-      <span id="rateValue">1</span>
-    </label>
-    <label>
-      Pitch:
-      <input type="range" id="pitch" min="0" max="2" value="1" step="0.1">
-      <span id="pitchValue">1</span>
-    </label>
-    <label>
-      Volume:
-      <input type="range" id="volume" min="0" max="1" value="1" step="0.1">
-      <span id="volumeValue">1</span>
-    </label>
+  <div id="transformer-tts" class="tab-content">
+    <div class="status" id="transformerStatus">
+      Loading Transformer.js models...
+    </div>
+    <div id="loading">Processing text...</div>
   </div>
 
   <textarea id="textToSpeak" placeholder="Enter text to speak...">Hello! This is a test of the text-to-speech system.</textarea>
@@ -131,6 +190,31 @@
 <script>
 let voices = [];
 let selectedVoice = null;
+let pipeline = null;
+let currentTab = 'browser-tts';
+
+// Initialize Transformers.js
+async function initTransformers() {
+  try {
+    const { pipeline: transformerPipeline } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0');
+    pipeline = await transformerPipeline('text2text-generation', 'Xenova/t5-small');
+    document.getElementById('transformerStatus').textContent = 'Transformer.js models loaded successfully!';
+  } catch (error) {
+    document.getElementById('transformerStatus').textContent = 'Error loading Transformer.js: ' + error.message;
+  }
+}
+
+// Initialize tabs
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    
+    tab.classList.add('active');
+    currentTab = tab.dataset.tab;
+    document.getElementById(currentTab).classList.add('active');
+  });
+});
 
 function populateVoiceList() {
   const voiceList = document.getElementById('voiceList');
@@ -138,7 +222,6 @@ function populateVoiceList() {
   
   voices = speechSynthesis.getVoices();
   
-  // Sort voices by language
   voices.sort((a, b) => {
     if (a.lang < b.lang) return -1;
     if (a.lang > b.lang) return 1;
@@ -193,17 +276,48 @@ function applyVoiceSettings(utterance) {
   utterance.volume = parseFloat(document.getElementById('volume').value);
 }
 
-function speak() {
-  if (!selectedVoice) {
+async function speakWithTransformer(text) {
+  if (!pipeline) {
+    alert('Transformer models are not yet loaded. Please wait.');
+    return;
+  }
+
+  document.getElementById('loading').style.display = 'block';
+  try {
+    // Generate enhanced text using transformer
+    const result = await pipeline(text, {
+      max_length: 100,
+      num_return_sequences: 1
+    });
+    
+    // Speak the enhanced text using browser TTS
+    const utterance = new SpeechSynthesisUtterance(result[0].generated_text);
+    if (selectedVoice) utterance.voice = selectedVoice;
+    applyVoiceSettings(utterance);
+    speechSynthesis.speak(utterance);
+  } catch (error) {
+    alert('Error processing text with transformer: ' + error.message);
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+  }
+}
+
+async function speak() {
+  if (currentTab === 'browser-tts' && !selectedVoice) {
     alert('Please select a voice first');
     return;
   }
   
   const text = document.getElementById('textToSpeak').value;
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.voice = selectedVoice;
-  applyVoiceSettings(utterance);
-  speechSynthesis.speak(utterance);
+  
+  if (currentTab === 'transformer-tts') {
+    await speakWithTransformer(text);
+  } else {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.voice = selectedVoice;
+    applyVoiceSettings(utterance);
+    speechSynthesis.speak(utterance);
+  }
 }
 
 document.getElementById('speakButton').addEventListener('click', speak);
@@ -221,8 +335,9 @@ if (speechSynthesis.onvoiceschanged !== undefined) {
   speechSynthesis.onvoiceschanged = populateVoiceList;
 }
 
-// Populate immediately in case voices are already loaded
+// Initialize everything
 populateVoiceList();
+initTransformers();
 </script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body></html>
