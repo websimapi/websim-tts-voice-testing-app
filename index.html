@@ -1,0 +1,168 @@
+<html><head><base href="." />
+<meta charset="UTF-8">
+<title>TTS Voice Testing App</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background: #f5f5f5;
+  }
+
+  .container {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  .voice-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin: 20px 0;
+  }
+
+  .voice-option {
+    padding: 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .voice-option:hover {
+    background: #f0f0f0;
+  }
+
+  .controls {
+    display: flex;
+    gap: 10px;
+    margin: 20px 0;
+  }
+
+  textarea {
+    width: 100%;
+    height: 100px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin: 10px 0;
+  }
+
+  button {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #0056b3;
+  }
+
+  .voice-info {
+    font-size: 0.9em;
+    color: #666;
+  }
+
+  .selected {
+    background: #e3f2fd;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>TTS Voice Tester</h1>
+  
+  <div class="controls">
+    <button id="refreshVoices">Refresh Voice List</button>
+    <button id="stopButton">Stop Speaking</button>
+  </div>
+
+  <div class="voice-list" id="voiceList">
+    <!-- Voices will be listed here -->
+  </div>
+
+  <textarea id="textToSpeak" placeholder="Enter text to speak...">Hello! This is a test of the text-to-speech system.</textarea>
+  
+  <button id="speakButton">Speak</button>
+</div>
+
+<script>
+let voices = [];
+let selectedVoice = null;
+
+function populateVoiceList() {
+  const voiceList = document.getElementById('voiceList');
+  voiceList.innerHTML = '';
+  
+  voices = speechSynthesis.getVoices();
+  
+  voices.forEach((voice, index) => {
+    const div = document.createElement('div');
+    div.className = 'voice-option';
+    div.innerHTML = `
+      <div>
+        <strong>${voice.name}</strong>
+        <div class="voice-info">
+          ${voice.lang} | ${voice.localService ? 'Local' : 'Network'} | 
+          ${voice.default ? 'Default' : 'Additional'}
+        </div>
+      </div>
+      <button onclick="testVoice(${index})">Test</button>
+    `;
+    
+    div.addEventListener('click', () => {
+      document.querySelectorAll('.voice-option').forEach(el => el.classList.remove('selected'));
+      div.classList.add('selected');
+      selectedVoice = voice;
+    });
+    
+    voiceList.appendChild(div);
+  });
+}
+
+function testVoice(index) {
+  const utterance = new SpeechSynthesisUtterance('This is a test of this voice.');
+  utterance.voice = voices[index];
+  speechSynthesis.speak(utterance);
+}
+
+function speak() {
+  if (!selectedVoice) {
+    alert('Please select a voice first');
+    return;
+  }
+  
+  const text = document.getElementById('textToSpeak').value;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.voice = selectedVoice;
+  speechSynthesis.speak(utterance);
+}
+
+document.getElementById('speakButton').addEventListener('click', speak);
+
+document.getElementById('refreshVoices').addEventListener('click', () => {
+  populateVoiceList();
+});
+
+document.getElementById('stopButton').addEventListener('click', () => {
+  speechSynthesis.cancel();
+});
+
+// Initial population of voices
+if (speechSynthesis.onvoiceschanged !== undefined) {
+  speechSynthesis.onvoiceschanged = populateVoiceList;
+}
+
+// Populate immediately in case voices are already loaded
+populateVoiceList();
+</script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body></html>
